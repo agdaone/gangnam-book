@@ -22,6 +22,39 @@
       "압구정새싹작은도서관", "역삼도서관", "역삼푸른솔도서관", "일곡어린이도서관", "청담도서관"
     ];
 
+    // 스마트폰 대용량 사진을 초고속으로 리사이징/압축하는 유틸리티
+    const resizeImage = (file) => {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(img.src);
+          const maxDim = 1024;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height && width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // JPEG 70% 압축된 Base64 반환 (용량 95% 이상 감소)
+          const base64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+          resolve(base64);
+        };
+        img.onerror = (err) => reject(err);
+      });
+    };
+
     function App() {
       const [apiKey, setApiKey] = useState("");
       const [searchQuery, setSearchQuery] = useState("");
@@ -61,57 +94,65 @@
         const file = e.target.files[0];
         if (!file) return;
 
-        if (!apiKey) {
-          setError("API 키가 등록되지 않았습니다. 남편분께 받은 전체 링크로 다시 접속해주세요.");
+        const currentKey = apiKey || localStorage.getItem("gangnam_book_api_key");
+        if (!currentKey) {
+          setError("API 키가 없습니다. 남편분께 받은 ?key= 링크로 1회 접속해주세요.");
           return;
         }
 
         setError("");
         setImagePreview(URL.createObjectURL(file));
         setIsAnalyzing(true);
-        setStatusMessage("책 표지 분석 중...");
+        setStatusMessage("사진 용량 최적화 중...");
 
         try {
-          const reader = new FileReader();
-          reader.readAsDataURL(file);
-          reader.onloadend = async () => {
-            const base64Data = reader.result.split(",")[1];
-            
-            const response = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contents: [
-                    {
-                      parts: [
-                        { text: "이 이미지에서 책 제목만 추출해줘. 다른 부연 설명이나 특수기호 없이 제목만 반환해" },
-                        {
-                          inline_data: {
-                            mime_type: file.type || "image/jpeg",
-                            data: base64Data
-                          }
-                        }
-                      ]
-                    }
-                  ]
-                })
-              }
-            );
+          // 1. 모바일 사진 압축
+          const base64Data = await resizeImage(file);
+          setStatusMessage("AI 책 표지 분석 중...");
 
-            const result = await response.json();
-            if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
-              const detectedTitle = result.candidates[0].content.parts[0].text.trim().replace(/[\"\'\n]/g, "");
-              setSearchQuery(detectedTitle);
-              setStatusMessage("책 제목이 입력되었습니다!");
-            } else {
-              throw new Error("제목 추출 실패");
+          // 2. Gemini API 호출 (안정적인 flash 모델 적용)
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${currentKey}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [
+                  {
+                    parts: [
+                      { text: "이 이미지에서 책 제목만 추출해줘. 출판사나 저자, 부연설명 없이 오직 제목만 한 줄로 반환해줘." },
+                      {
+                        inline_data: {
+                          mime_type: "image/jpeg",
+                          data: base64Data
+                        }
+                      }
+                    ]
+                  }
+                ]
+              })
             }
-            setIsAnalyzing(false);
-          };
+          );
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            const apiErrMsg = result.error?.message || "API 호출 실패";
+            throw new Error(`구글 서버 오류: ${apiErrMsg}`);
+          }
+
+          if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+            const detectedTitle = result.candidates[0].content.parts[0].text
+              .trim()
+              .replace(/[\"\'\n\r]/g, "");
+            setSearchQuery(detectedTitle);
+            setStatusMessage("제목 인식 완료!");
+          } else {
+            throw new Error("사진에서 책 제목을 찾지 못했습니다.");
+          }
         } catch (err) {
-          setError("사진에서 제목을 읽지 못했습니다. 직접 입력해주세요.");
+          setError(err.message || "사진 분석에 실패했습니다. 직접 입력해주세요.");
+        } finally {
           setIsAnalyzing(false);
           setStatusMessage("");
         }
