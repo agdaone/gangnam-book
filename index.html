@@ -22,7 +22,7 @@
       "압구정새싹작은도서관", "역삼도서관", "역삼푸른솔도서관", "일곡어린이도서관", "청담도서관"
     ];
 
-    // 모바일 사진 고속 압축 유틸리티
+    // 스마트폰 대용량 사진 고속 압축 유틸리티
     const resizeImage = (file) => {
       return new Promise((resolve, reject) => {
         const img = new Image();
@@ -100,13 +100,74 @@
       const selectAll = () => setSelectedLibs([...GANGNAM_LIBRARIES]);
       const deselectAll = () => setSelectedLibs([]);
 
+      // 구글 서버 트래픽 폭주 시 자동 재시도 및 모델 폴백 로직
+      const callGeminiWithFallback = async (base64Data, currentKey) => {
+        const models = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.8-pro"];
+        let lastErrorMsg = "";
+
+        for (const model of models) {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            if (attempt > 0) {
+              setStatusMessage("서버 대기 중, 1초 후 자동 재시도...");
+              await new Promise((r) => setTimeout(r, 1200));
+            }
+
+            try {
+              const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": currentKey
+                  },
+                  body: JSON.stringify({
+                    contents: [
+                      {
+                        parts: [
+                          { text: "이 이미지에서 책 제목만 추출해줘. 다른 부연 설명이나 특수문자 없이 오직 책 제목만 한 줄로 반환해줘." },
+                          {
+                            inline_data: {
+                              mime_type: "image/jpeg",
+                              data: base64Data
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  })
+                }
+              );
+
+              const result = await response.json();
+
+              if (response.ok && result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+                return result.candidates[0].content.parts[0].text;
+              }
+
+              const errorMsg = result.error?.message || "";
+              lastErrorMsg = errorMsg;
+
+              // 트래픽 과부하(high demand, 503, 429) 시 바로 포기하지 않고 루프를 돌아 재시도
+              const isOverload = errorMsg.includes("high demand") || response.status === 503 || response.status === 429;
+              if (!isOverload && !response.ok) {
+                throw new Error(errorMsg || "API 호출 실패");
+              }
+            } catch (err) {
+              lastErrorMsg = err.message;
+            }
+          }
+        }
+        throw new Error(lastErrorMsg || "구글 서버 트래픽이 일시적으로 몰려 있습니다. 잠시 후 다시 눌러주세요.");
+      };
+
       const handleImageUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
         const currentKey = apiKey || localStorage.getItem("gangnam_book_api_key");
         if (!currentKey) {
-          setError("API 키가 등록되지 않았습니다. 상단 ⚙️ 설정을 눌러 키를 입력해주세요.");
+          setError("API 키가 등록되지 않았습니다. 상단 ⚙️ 키 설정을 눌러주세요.");
           setShowKeyInput(true);
           return;
         }
@@ -120,49 +181,11 @@
           const base64Data = await resizeImage(file);
           setStatusMessage("AI 책 표지 분석 중...");
 
-          // 최신 gemini-3.8-flash 모델 적용
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "x-goog-api-key": currentKey
-              },
-              body: JSON.stringify({
-                contents: [
-                  {
-                    parts: [
-                      { text: "이 이미지에서 책 제목만 추출해줘. 다른 설명 없이 오직 책 제목만 한 줄로 반환해줘." },
-                      {
-                        inline_data: {
-                          mime_type: "image/jpeg",
-                          data: base64Data
-                        }
-                      }
-                    ]
-                  }
-                ]
-              })
-            }
-          );
+          const rawTitle = await callGeminiWithFallback(base64Data, currentKey);
+          const detectedTitle = rawTitle.trim().replace(/[\"\'\n\r]/g, "");
 
-          const result = await response.json();
-
-          if (!response.ok) {
-            const apiErrMsg = result.error?.message || "인증 실패";
-            throw new Error(`구글 서버 오류: ${apiErrMsg}`);
-          }
-
-          if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
-            const detectedTitle = result.candidates[0].content.parts[0].text
-              .trim()
-              .replace(/[\"\'\n\r]/g, "");
-            setSearchQuery(detectedTitle);
-            setStatusMessage("제목 인식 완료!");
-          } else {
-            throw new Error("사진에서 책 제목을 찾지 못했습니다.");
-          }
+          setSearchQuery(detectedTitle);
+          setStatusMessage("제목 인식 완료!");
         } catch (err) {
           setError(err.message || "사진 분석에 실패했습니다.");
         } finally {
