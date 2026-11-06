@@ -3,33 +3,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>강남구 도서관 책 찾기</title>
+  <title>강남구 도서관 재고 에이전트</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- 바코드 인식 라이브러리 -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- 브라우저 내장 엑셀(.xlsx) 생성 라이브러리 -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 </head>
-<body class="bg-slate-50 text-slate-800">
+<body class="bg-slate-100 text-slate-800">
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useRef } = React;
 
-    const GANGNAM_LIBRARIES = [
-      "행복한도서관", "도곡정보문화도서관", "개포하늘꿈도서관", "대치복합문화도서관",
-      "못골열린도서관", "역삼도서관", "역삼푸른솔도서관", "논현북푸른도서관",
-      "청담도서관", "세곡비단길도서관", "수서명화어린이도서관", "일곡어린이도서관",
-      "아곡어린이도서관", "못골한옥어린이도서관", "강남구립국제영어도서관", "밀리아재미도서관", "압구정새싹작은도서관"
+    const LIBRARY_DATA = [
+      { id: "dogok", name: "도곡정보문화도서관", tel: "02-1644-3227", loc: "도곡동", closed: "월요일" },
+      { id: "motgol", name: "못골열린도서관", tel: "02-459-5522", loc: "자곡동", closed: "화요일" },
+      { id: "gaepo", name: "개포하늘꿈도서관", tel: "02-573-0570", loc: "개포동", closed: "화요일" },
+      { id: "happy", name: "행복한도서관", tel: "02-567-3833", loc: "대치동", closed: "월요일" },
+      { id: "daechi", name: "대치복합문화도서관", tel: "02-565-6823", loc: "대치동", closed: "화요일" },
+      { id: "yeoksam", name: "역삼도서관", tel: "02-508-5188", loc: "역삼동", closed: "월요일" },
+      { id: "yeoksam_ps", name: "역삼푸른솔도서관", tel: "02-3453-6192", loc: "역삼동", closed: "화요일" },
+      { id: "nonhyeon", name: "논현북푸른도서관", tel: "02-3444-2401", loc: "논현동", closed: "화요일" },
+      { id: "cheongdam", name: "청담도서관", tel: "02-540-7042", loc: "청담동", closed: "화요일" },
+      { id: "segok", name: "세곡비단길도서관", tel: "02-445-5623", loc: "세곡동", closed: "월요일" },
+      { id: "suseo", name: "수서명화어린이도서관", tel: "02-445-8344", loc: "수서동", closed: "화요일" },
+      { id: "ilgok", name: "일곡어린이도서관", tel: "02-3412-4033", loc: "일원동", closed: "월요일" },
+      { id: "agok", name: "아곡어린이도서관", tel: "02-569-1707", loc: "역삼동", closed: "화요일" },
+      { id: "motgol_hanok", name: "못골한옥어린이도서관", tel: "02-2226-5930", loc: "자곡동", closed: "월요일" },
+      { id: "eng", name: "강남구립국제영어도서관", tel: "02-540-1004", loc: "압구정동", closed: "월요일" },
+      { id: "milia", name: "밀리아재미도서관", tel: "02-517-5788", loc: "논현동", closed: "일,월요일" },
+      { id: "apgu", name: "압구정새싹작은도서관", tel: "02-548-2788", loc: "압구정동", closed: "주말" }
     ];
 
     function App() {
       const [keyword, setKeyword] = useState("");
       const [statusMsg, setStatusMsg] = useState("");
+      const [isScraping, setIsScraping] = useState(false);
       const [error, setError] = useState("");
       const barcodeFileRef = useRef(null);
 
-      // 바코드 사진에서 번호 추출 (인앱 브라우저 호환)
+      // 바코드 사진에서 번호 추출 (구글 AI 없이 빠르고 정확하게)
       const handleBarcodeScan = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -39,10 +56,9 @@
 
         try {
           let detected = null;
-
           if ("BarcodeDetector" in window) {
             const bitmap = await createImageBitmap(file);
-            const detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "qr_code", "upc_a"] });
+            const detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "qr_code"] });
             const results = await detector.detect(bitmap);
             if (results.length > 0) detected = results[0].rawValue;
           }
@@ -55,67 +71,137 @@
 
           if (detected) {
             if (navigator.vibrate) navigator.vibrate(100);
-            setKeyword(detected);
             setStatusMsg(`바코드 인식 완료: ${detected}`);
+            
+            // 구글 북스 API로 책 제목 자동 변환
+            const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${detected}`);
+            const data = await res.json();
+            if (data.items && data.items[0]?.volumeInfo?.title) {
+              setKeyword(data.items[0].volumeInfo.title);
+            } else {
+              setKeyword(detected);
+            }
           } else {
             throw new Error("바코드를 인식하지 못했습니다.");
           }
         } catch (err) {
-          setError("바코드를 읽지 못했습니다. 번호가 보이도록 수평으로 다시 찍어주세요.");
+          setError("바코드를 읽지 못했습니다. 선명하게 다시 찍어주세요.");
           setStatusMsg("");
         }
       };
 
-      // 강남구 17개 도서관 실시간 소장/대출 여부 통합 검색창 열기
-      const searchGangnamLibrary = (queryStr) => {
-        const target = (queryStr || keyword).trim();
-        if (!target) {
-          setError("도서명 또는 바코드 번호를 입력해주세요.");
+      // 우회 프록시를 통한 스크래핑 및 엑셀 다운로드 에이전트
+      const fetchAndExportExcel = async () => {
+        if (!keyword.trim()) {
+          setError("도서명 또는 바코드를 입력해주세요.");
           return;
         }
-        setError("");
-        const encoded = encodeURIComponent(target);
-        // 강남구립도서관 공식 정규 통합검색 URL (경로 오류 없이 17개 도서관 소장 결과 즉시 표출)
-        const url = `https://library.gangnam.go.kr/intro/menu/10003/program/30001/plusSearchResultList.do?searchType=SIMPLE&searchCategory=ALL&searchKey=ALL&searchKeyword=${encoded}`;
-        window.open(url, "_blank");
-      };
 
-      // 네이버 도서 검색 바로가기 (바코드 번호가 무슨 책인지 확인할 때 사용)
-      const searchNaverBook = () => {
-        const target = keyword.trim();
-        if (!target) {
-          setError("도서명 또는 바코드 번호를 입력해주세요.");
-          return;
+        setError("");
+        setIsScraping(true);
+        setStatusMsg("우회 프록시로 도서관 서버 잠입 중...");
+
+        let excelData = [];
+        const targetUrl = `https://library.gangnam.go.kr/intro/menu/10003/program/30001/plusSearchResultList.do?searchType=SIMPLE&searchCategory=ALL&searchKey=ALL&searchKeyword=${encodeURIComponent(keyword)}`;
+        
+        try {
+          // CORS 브라우저 보안을 뚫기 위해 무료 우회 프록시(allorigins) 경유
+          const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+          const response = await fetch(proxyUrl);
+          const data = await response.json();
+          
+          setStatusMsg("HTML 데이터 파싱 및 엑셀 변환 중...");
+          const doc = new DOMParser().parseFromString(data.contents, 'text/html');
+          const pageText = doc.body.innerText.replace(/\s+/g, ' ');
+
+          excelData = LIBRARY_DATA.map(lib => {
+            let status = "상태 미확인 (우측 링크 확인)";
+            // 원시 HTML 텍스트 내에서 도서관 이름 주변의 대출 상태 키워드 추출
+            if (pageText.includes(lib.name)) {
+              const snippet = pageText.substring(pageText.indexOf(lib.name), pageText.indexOf(lib.name) + 150);
+              if (snippet.includes("대출가능")) status = "🟢 대출가능";
+              else if (snippet.includes("대출중") || snippet.includes("예약중")) status = "🔴 대출중/예약중";
+              else status = "소장 확인됨 (세부상태 미상)";
+            } else {
+              if (pageText.includes("검색결과가 없습니다")) status = "미소장";
+            }
+            
+            return {
+              "도서관명": lib.name,
+              "동네(위치)": lib.loc,
+              "휴관일": lib.closed,
+              "대출 상태(추정)": status,
+              "전화번호": lib.tel,
+              "강남구청 상세조회 다이렉트 링크": targetUrl
+            };
+          });
+
+        } catch (err) {
+          // 프록시마저 막힐 경우를 대비한 기본 엑셀 양식 생성 폴백
+          setStatusMsg("도서관 방화벽 차단. 기본 엑셀 리스트로 생성합니다...");
+          excelData = LIBRARY_DATA.map(lib => ({
+            "도서관명": lib.name,
+            "동네(위치)": lib.loc,
+            "휴관일": lib.closed,
+            "대출 상태(추정)": "직접 확인 필요",
+            "전화번호": lib.tel,
+            "강남구청 상세조회 다이렉트 링크": targetUrl
+          }));
         }
-        window.open(`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(target)}`, "_blank");
+
+        try {
+          // SheetJS를 이용해 브라우저 메모리 안에서 즉시 .xlsx 파일 생성
+          const ws = XLSX.utils.json_to_sheet(excelData);
+          
+          // 엑셀 셀 너비 자동 맞춤
+          ws['!cols'] = [
+            {wch: 22}, // 도서관명
+            {wch: 12}, // 위치
+            {wch: 10}, // 휴관일
+            {wch: 25}, // 대출 상태
+            {wch: 15}, // 전화번호
+            {wch: 80}  // 다이렉트 링크
+          ];
+          
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "도서관 현황");
+          
+          const fileName = `강남구도서관_${keyword.trim().slice(0, 10)}.xlsx`;
+          XLSX.writeFile(wb, fileName);
+          
+          setStatusMsg(`✅ 엑셀 다운로드 완료! (${fileName})`);
+        } catch (err) {
+          setError("엑셀 파일 생성 중 오류가 발생했습니다.");
+          setStatusMsg("");
+        } finally {
+          setIsScraping(false);
+        }
       };
 
       return (
-        <div className="max-w-md mx-auto min-h-screen bg-white shadow-md flex flex-col font-sans pb-10">
+        <div className="max-w-md mx-auto min-h-screen bg-slate-100 flex flex-col font-sans pb-10">
           <div id="barcode-canvas" style={{ position: "absolute", left: "-9999px" }}></div>
 
-          {/* 헤더 */}
-          <header className="bg-teal-700 text-white p-5 sticky top-0 z-10 shadow">
+          <header className="bg-emerald-700 text-white p-5 sticky top-0 z-10 shadow">
             <h1 className="text-lg font-bold flex items-center gap-2">
-              <span>📚</span> 강남구 도서관 책 찾기
+              <span>📊</span> 도서관 엑셀 추출 에이전트
             </h1>
-            <p className="text-teal-100 text-xs mt-1">책 제목이나 바코드로 17개 도서관 소장·대출 현황을 바로 확인하세요</p>
+            <p className="text-emerald-100 text-xs mt-1">책을 스캔하고 버튼을 누르면 17곳의 현황이 엑셀로 저장됩니다.</p>
           </header>
 
           <main className="p-4 space-y-5">
-            {/* 1. 바코드 촬영 버튼 */}
-            <div className="bg-teal-50 border-2 border-dashed border-teal-300 rounded-2xl p-5 text-center space-y-3">
-              <div className="text-4xl">📟</div>
+            <div className="bg-emerald-50 border-2 border-dashed border-emerald-300 rounded-2xl p-5 text-center space-y-3">
+              <div className="text-4xl">📸</div>
               <div>
-                <p className="text-sm font-semibold text-teal-900">책 뒷면 바코드 찍기</p>
-                <p className="text-xs text-teal-600 mt-1">서버 대기열 없이 폰 카메라로 번호를 즉시 읽습니다</p>
+                <p className="text-sm font-semibold text-emerald-900">1단계: 책 뒷면 바코드 찍기</p>
+                <p className="text-xs text-emerald-600 mt-1">도서명을 직접 입력하셔도 됩니다.</p>
               </div>
 
               <button
                 onClick={() => barcodeFileRef.current?.click()}
-                className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3.5 rounded-xl text-sm shadow transition flex items-center justify-center gap-2"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 rounded-xl text-sm shadow transition"
               >
-                <span>📸</span> 바코드 사진 촬영하기
+                바코드 사진 촬영하기
               </button>
 
               <input
@@ -126,69 +212,51 @@
                 onChange={handleBarcodeScan}
                 className="hidden"
               />
-
-              {statusMsg && <p className="text-xs text-teal-800 font-medium">{statusMsg}</p>}
             </div>
 
-            {/* 2. 도서명 / 바코드 번호 입력창 */}
             <div className="space-y-2">
-              <label className="block text-xs font-bold text-slate-700">검색할 도서명 또는 바코드 번호</label>
+              <label className="block text-xs font-bold text-slate-700">2단계: 검색할 도서명 확인</label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") searchGangnamLibrary(); }}
-                  placeholder="예: 코스모스 또는 9788983711892"
-                  className="flex-1 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-slate-50"
+                  placeholder="예: 불편한 편의점"
+                  className="flex-1 border border-slate-300 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white shadow-sm"
                 />
-                {keyword && (
-                  <button
-                    onClick={() => { setKeyword(""); setStatusMsg(""); }}
-                    className="text-slate-400 hover:text-slate-600 text-xs px-2"
-                  >
-                    ✕
-                  </button>
-                )}
               </div>
             </div>
+
+            <div className="pt-2">
+              <button
+                onClick={fetchAndExportExcel}
+                disabled={isScraping}
+                className={`w-full font-bold py-4 rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2 ${
+                  isScraping ? "bg-slate-400 text-white cursor-not-allowed" : "bg-slate-900 hover:bg-black text-white"
+                }`}
+              >
+                <span>{isScraping ? "⏳" : "📥"}</span> 
+                {isScraping ? "데이터 수집 및 엑셀 생성 중..." : "전체 도서관 스크래핑 및 엑셀 다운로드"}
+              </button>
+            </div>
+
+            {statusMsg && (
+              <div className="bg-emerald-100 text-emerald-800 text-xs font-semibold p-3 rounded-xl text-center shadow-sm">
+                {statusMsg}
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-50 text-red-600 text-xs p-3 rounded-xl border border-red-200">
                 ⚠️ {error}
               </div>
             )}
-
-            {/* 3. 검색 실행 버튼 그룹 */}
-            <div className="space-y-2.5 pt-1">
-              <button
-                onClick={() => searchGangnamLibrary()}
-                className="w-full bg-slate-900 hover:bg-black text-white font-bold py-3.5 rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2"
-              >
-                <span>🔍</span> 강남구 17개 도서관 실시간 대출·소장 확인
-              </button>
-
-              <button
-                onClick={searchNaverBook}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-slate-200"
-              >
-                <span>📖</span> 이 바코드/책의 상세정보 확인 (네이버)
-              </button>
-            </div>
-
-            {/* 4. 대상 도서관 안내 */}
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 text-xs text-slate-600 space-y-2">
-              <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                <span className="font-bold text-slate-800">조회 대상 도서관 (총 17곳)</span>
-                <span className="text-teal-700 font-semibold">동시 검색</span>
-              </div>
-              <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-500 pt-1">
-                {GANGNAM_LIBRARIES.map((name) => (
-                  <div key={name} className="flex items-center gap-1">
-                    <span className="text-teal-500">✔</span> {name}
-                  </div>
-                ))}
-              </div>
+            
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-[11px] text-slate-500 space-y-1">
+              <p className="font-bold text-slate-700">작동 원리 및 안내</p>
+              <p>1. 우회 프록시 서버를 통해 강남구 도서관 통합검색 페이지에 백그라운드로 접속합니다.</p>
+              <p>2. 분석된 재고 현황을 SheetJS 엔진을 통해 스마트폰 내부에 즉시 엑셀(.xlsx)로 렌더링하여 다운로드합니다.</p>
+              <p>3. 도서관 측의 방화벽이나 AJAX 지연으로 상태 텍스트가 가려질 경우 '상태 미확인'으로 표시되며, 엑셀 내 <strong>다이렉트 링크</strong>를 누르시면 튕김 현상 없이 즉각 확인 가능합니다.</p>
             </div>
           </main>
         </div>
