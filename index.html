@@ -53,16 +53,17 @@
       const [tempKey, setTempKey] = useState("");
       
       const [inputKeyword, setInputKeyword] = useState("");
-      const [identifiedBook, setIdentifiedBook] = useState(null);
+      
+      // 앱을 터뜨렸던 원인: 변수명 불일치 완벽 수정
+      const [confirmedBook, setConfirmedBook] = useState(null); 
+      
       const [editableTitle, setEditableTitle] = useState("");
       
       const [holdingLibraries, setHoldingLibraries] = useState([]);
       const [isSearchingHoldings, setIsSearchingHoldings] = useState(false);
       const [hasSearched, setHasSearched] = useState(false);
 
-      // 치명적 에러 원인이었던 변수 선언 누락 복구
       const [isLoading, setIsLoading] = useState(false);
-      
       const [statusMsg, setStatusMsg] = useState("");
       const [error, setError] = useState("");
 
@@ -108,7 +109,6 @@
           try {
             const prompt = `도서 식별: "${codeOrTitle}". 한국 출판 도서의 제목, 저자, 출판사를 아래 JSON 형식으로만 답해.\n{"title":"도서명","author":"저자명","publisher":"출판사명"}`;
             
-            // 타임아웃 안전장치
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
             
@@ -187,7 +187,7 @@
           setStatusMsg("도서명 확인 중...");
 
           const book = await lookupBookInfo(clean);
-          setConfirmedBook(book);
+          setConfirmedBook(book); 
           setEditableTitle(book.title);
           setStatusMsg("");
         } catch (err) {
@@ -237,7 +237,7 @@
         try {
           const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          const timeoutId = setTimeout(() => controller.abort(), 12000);
           
           const response = await fetch(proxyUrl, { signal: controller.signal });
           clearTimeout(timeoutId);
@@ -294,14 +294,14 @@
 
       return (
         <div className="max-w-md mx-auto min-h-screen bg-slate-100 flex flex-col font-sans pb-16">
-          <div id="barcode-hidden-canvas" style={{ position: "absolute", left: "-9999px" }}></div>
+          <div id="barcode-hidden-canvas" style={{ position: "absolute", left: "-9999px", width: "300px", height: "300px" }}></div>
 
           <header className="bg-teal-700 text-white p-5 sticky top-0 z-20 shadow-md flex justify-between items-start">
             <div>
               <h1 className="text-lg font-bold flex items-center gap-2">
                 <span>📚</span> 강남구 도서관 책 찾기
               </h1>
-              <p className="text-teal-200 text-xs mt-0.5">보유하고 있는 도서관만 골라냅니다</p>
+              <p className="text-teal-200 text-xs mt-0.5">보유하고 있는 도서관만 화면에 골라냅니다</p>
             </div>
             <button 
               onClick={() => setShowKeyInput(!showKeyInput)}
@@ -311,188 +311,4 @@
             </button>
           </header>
 
-          <main className="p-4 space-y-4">
-            {showKeyInput && (
-              <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 text-xs space-y-2">
-                <p className="font-semibold text-teal-900">🔑 Gemini API 키 등록</p>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={tempKey}
-                    onChange={(e) => setTempKey(e.target.value)}
-                    placeholder="API 키 붙여넣기"
-                    className="flex-1 border border-slate-300 rounded-lg px-2 text-xs bg-white"
-                  />
-                  <button onClick={saveManualKey} className="bg-teal-600 text-white font-medium px-3 py-1.5 rounded-lg text-xs">저장</button>
-                </div>
-              </div>
-            )}
-
-            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
-              <button
-                type="button"
-                onClick={() => barcodeFileRef.current?.click()}
-                className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3.5 rounded-xl text-sm shadow flex items-center justify-center gap-2"
-              >
-                <span>📸</span> 책 뒷면 바코드 찍기
-              </button>
-
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                ref={barcodeFileRef}
-                onChange={handleBarcodeUpload}
-                className="hidden"
-              />
-
-              <div className="relative flex items-center text-xs text-slate-400 py-1">
-                <div className="flex-grow border-t border-slate-200"></div>
-                <span className="flex-shrink mx-2">또는 제목/번호 직접 입력</span>
-                <div className="flex-grow border-t border-slate-200"></div>
-              </div>
-
-              <form onSubmit={handleManualSearch} className="flex gap-2">
-                <input
-                  type="text"
-                  value={inputKeyword}
-                  onChange={(e) => setInputKeyword(e.target.value)}
-                  placeholder="예: 불편한 편의점 또는 97889..."
-                  className="flex-1 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-slate-50"
-                />
-                <button
-                  type="submit"
-                  className="bg-slate-800 hover:bg-black text-white font-semibold px-4 py-2.5 rounded-xl text-sm shrink-0"
-                >
-                  조회
-                </button>
-              </form>
-
-              {statusMsg && (
-                <div className="flex items-center justify-center gap-2 text-xs text-teal-800 font-medium py-1">
-                  {isLoading && <div className="w-3.5 h-3.5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin"></div>}
-                  {statusMsg}
-                </div>
-              )}
-
-              {error && (
-                <div className="bg-red-50 text-red-600 text-xs p-3 rounded-xl border border-red-200">
-                  ⚠️ {error}
-                </div>
-              )}
-            </div>
-
-            {confirmedBook && (
-              <div className="bg-white rounded-2xl p-4 shadow-md border-2 border-teal-500 space-y-3 animate-fade-in">
-                <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                  <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-md">찾으시는 책이 맞나요?</span>
-                  {confirmedBook.isbn && <span className="text-[11px] text-slate-400">ISBN: {confirmedBook.isbn}</span>}
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">도서명 (틀릴 경우 직접 수정 가능)</label>
-                  <input
-                    type="text"
-                    value={editableTitle}
-                    onChange={(e) => setEditableTitle(e.target.value)}
-                    className="w-full font-bold text-slate-900 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 bg-slate-50"
-                  />
-                  <div className="flex gap-3 text-xs text-slate-600 mt-1.5">
-                    {confirmedBook.author && <span>저자: <strong>{confirmedBook.author}</strong></span>}
-                    {confirmedBook.publisher && <span>출판: <strong>{confirmedBook.publisher}</strong></span>}
-                  </div>
-                </div>
-
-                <button
-                  onClick={searchHoldingLibraries}
-                  disabled={isSearchingHoldings}
-                  className={`w-full font-bold py-3.5 rounded-xl text-sm shadow flex items-center justify-center gap-2 ${
-                    isSearchingHoldings ? "bg-slate-400 text-white cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                  }`}
-                >
-                  <span>{isSearchingHoldings ? "⏳" : "🔍"}</span>
-                  {isSearchingHoldings ? "도서관 서버 확인 중..." : "맞습니다, 소장 도서관 찾기"}
-                </button>
-              </div>
-            )}
-
-            {hasSearched && (
-              <div className="space-y-3 pt-2">
-                <div className="flex justify-between items-center px-1">
-                  <span className="text-xs font-bold text-slate-800">
-                    📖 《{editableTitle}》 소장 도서관
-                  </span>
-                  <span className="text-xs font-bold text-teal-700">
-                    {holdingLibraries.length > 0 ? `${holdingLibraries.length}곳 보유` : "0곳"}
-                  </span>
-                </div>
-
-                {holdingLibraries.length > 0 ? (
-                  holdingLibraries.map((lib) => (
-                    <div key={lib.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-bold text-slate-900">{lib.name}</span>
-                            <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{lib.loc}</span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1">운영시간: {lib.openH}:00 ~ {lib.closeH}:00</p>
-                        </div>
-
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${
-                          lib.status === "대출가능" 
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-300" 
-                            : "bg-red-50 text-red-600 border-red-200"
-                        }`}>
-                          {lib.status === "대출가능" ? "🟢 대출가능" : "🔴 대출중 / 예약"}
-                        </span>
-                      </div>
-
-                      <div className="flex gap-2 pt-1 border-t border-slate-100">
-                        <a
-                          href={getOfficialSearchUrl()}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 font-semibold py-2.5 rounded-xl text-xs text-center flex items-center justify-center gap-1"
-                        >
-                          <span>🔍</span> 강남구 통합 전산망에서 상세보기
-                        </a>
-                        <a
-                          href={`tel:${lib.tel}`}
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1"
-                        >
-                          <span>📞</span>
-                        </a>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  !isSearchingHoldings && (
-                    <div className="bg-white rounded-2xl p-6 text-center space-y-3 border border-slate-200 shadow-sm">
-                      <div className="text-3xl">🏜️</div>
-                      <p className="text-sm font-bold text-slate-800">소장 중인 도서관이 없거나 모두 대출 중입니다</p>
-                      <p className="text-xs text-slate-500">
-                        오류가 의심되시거나 도서관 전체 검색 결과를 직접 확인하시려면 아래 공식 링크를 눌러주세요.
-                      </p>
-                      <a
-                        href={getOfficialSearchUrl()}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-block bg-slate-900 hover:bg-black text-white text-xs font-semibold px-5 py-3 rounded-xl shadow"
-                      >
-                        강남구 공식 통합검색 화면 열기
-                      </a>
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-          </main>
-        </div>
-      );
-    }
-
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-  </script>
-</body>
-</html>
+          <main className="
